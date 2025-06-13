@@ -17,8 +17,6 @@ The script
      <stem>_crop_trans.png     - square crop, transparent BGRA
 """
 
-from __future__ import annotations
-
 import os
 from pathlib import Path
 from typing import Tuple
@@ -26,11 +24,12 @@ from typing import Tuple
 import cv2
 import numpy as np
 import torch
+import argparse
 import torch.nn.functional as F
 import torchvision.transforms as T
 import mediapipe as mp
 
-from modnet_src.models.modnet import MODNet     # assumes repo is on PYTHONPATH
+from modnet_src.models.modnet import MODNet
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,17 +43,17 @@ _TO_TENSOR = T.Compose(
 
 
 def _load_modnet(ckpt_path: str, device: torch.device) -> torch.nn.Module:
-    """Load a pre-trained MODNet and switch to eval mode."""
     modnet = MODNet(backbone_pretrained=False)
 
-    if device.type == "cuda":
-        modnet = torch.nn.DataParallel(modnet).to(device)
-        weights = torch.load(ckpt_path)
-    else:
-        weights = torch.load(ckpt_path, map_location=device)
+    # <<<  wrap regardless of CPU/GPU  >>>
+    modnet = torch.nn.DataParallel(modnet)      # <— move outside the if-block
+    modnet.to(device)
+
+    weights = torch.load(ckpt_path, map_location=device)
     modnet.load_state_dict(weights)
     modnet.eval()
     return modnet
+
 
 
 def _predict_matte(
@@ -188,10 +187,18 @@ def save_thumbnail_and_preview_images(
 # 3. demo
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate avatar thumbnails and previews.")
+    parser.add_argument("--thumbnail_image_path_rgb", type=str, required=True,
+                        help="Path to the RGB thumbnail image (PNG/JPG/…).")
+    parser.add_argument("--ckpt_path", type=str, default="modnet_photographic_portrait_matting.ckpt",
+                        help="Path to the pre-trained MODNet weights (.pth).")
+    parser.add_argument("--scale_factor", type=float, default=3.0,
+                        help="Scale factor for the square half-body crop.")
+    args = parser.parse_args()
     paths = save_thumbnail_and_preview_images(
-        thumbnail_image_path_rgb="nora_female_frame_rgb.png",
-        ckpt_path="pretrained_modnet.ckpt",
-        scale_factor=3.0,
+        thumbnail_image_path_rgb=args.thumbnail_image_path_rgb,
+        ckpt_path=args.ckpt_path,
+        scale_factor=args.scale_factor,
     )
     print("Saved PNGs:")
     for p in paths:
